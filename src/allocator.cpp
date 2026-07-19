@@ -7,6 +7,7 @@ This is a memory allocator implemented as a memory arena.
 
 #include <cstdlib>
 #include <mutex>
+#include <sanitizer/asan_interface.h>
 
 #include "bloom.h"
 
@@ -165,6 +166,7 @@ class ThreadCache {
       std::abort();  // probably not the best rn... :D
     }
 
+    ASAN_POISON_MEMORY_REGION(mem_start, ARENA_CAPACITY); // when the thread grabs memory, poison it all
     arena_base = (char*)mem_start;
     thread_arena = (char*)mem_start;
   }
@@ -179,6 +181,7 @@ class ThreadCache {
 
       void* chunk = thread_arena;
       thread_arena += size;
+      ASAN_UNPOISON_MEMORY_REGION(chunk, size); // we give out memory, unpoison it
       return chunk;
     }
 
@@ -186,12 +189,23 @@ class ThreadCache {
     // by the user
     void free_mem(){
       thread_arena = arena_base;
+      ASAN_POISON_MEMORY_REGION(arena_base, ARENA_CAPACITY);
     }
 
   ~ThreadCache() {
     // give memory back to the central bank
+    ASAN_UNPOISON_MEMORY_REGION(arena_base, ARENA_CAPACITY);
     global_bank.free(arena_base);
   }
 };
 
 thread_local ThreadCache t_cache;
+
+// callable functions
+void *allocate(size_t size){
+  return t_cache.alloc(size);
+}
+
+void free(void *chunk){
+  t_cache.free_mem();
+}
