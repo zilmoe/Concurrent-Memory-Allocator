@@ -9,7 +9,6 @@ This is the hash used:
 https://rosettacode.org/wiki/Pseudo-random_numbers/Splitmix64
 */
 
-#include "xxhash.h"
 #include <array>
 #include <cassert>
 #include <vector>
