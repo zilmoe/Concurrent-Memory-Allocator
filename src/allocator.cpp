@@ -43,6 +43,7 @@ class FreeListStack {
     len += 1;
 
     ((free_block*)block)->forward = top_block;
+    free_list = block;
   }
 
  public:
@@ -72,7 +73,7 @@ class BankHeap {
   FreeListStack free_list = FreeListStack();
   char* memory_arena = nullptr;
   char* arena_base = nullptr;
-  static const int ARENA_CAPACITY = 4096;
+  static const int ARENA_CAPACITY = 4096 * 32;
 
   // initializes memory by asking it from
   // the kernel
@@ -95,7 +96,9 @@ class BankHeap {
   // or nullptr if it is at max capacity
  public:
   void* alloc() {
-    size_t size = 1024;  // each thread can get 1024. have to do virtual memory shenanigans
+    std::lock_guard<std::mutex> lock(malloc_mutex);
+
+    size_t size = 4096;  // each thread can get 4096. have to do virtual memory shenanigans
                          // later for threads to request more :)
     // check if we can grab from the free_list
     if (!free_list.is_empty()) {
@@ -106,8 +109,6 @@ class BankHeap {
     if (((memory_arena + size) - arena_base) > ARENA_CAPACITY) {
       return nullptr;
     }
-
-    std::lock_guard<std::mutex> lock(malloc_mutex);
 
     void* allocated_block = memory_arena;
     memory_arena += size;
@@ -131,6 +132,9 @@ class BankHeap {
   void nuke_all() {
     // REQUIRES; thread-count = 0
     std::lock_guard<std::mutex> lock(malloc_mutex);
+    while (!free_list.is_empty()){
+      free_list.pop();
+    }
     memory_arena = arena_base;
   }
 
@@ -154,7 +158,7 @@ class ThreadCache {
   size_t memory_footprint = 0;  // do we need this?
   char* thread_arena = nullptr; // the top of the arena
   char* arena_base = nullptr; // the base of the arena
-  static const int ARENA_CAPACITY = 1024;
+  static const int ARENA_CAPACITY = 4096;
 
  public:
   ThreadCache() {
@@ -172,7 +176,7 @@ class ThreadCache {
   }
 
   public:
-    void* alloc(int size){
+    void* alloc(size_t size){
       if (thread_arena + size > arena_base + ARENA_CAPACITY){
         // we don't have enough memory... ABORT!
         // (same comment as other aborts :D)
